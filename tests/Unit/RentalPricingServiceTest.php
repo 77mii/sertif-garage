@@ -394,4 +394,134 @@ class RentalPricingServiceTest extends TestCase
             $this->assertArrayHasKey('garage_id', $exception->errors());
         }
     }
+
+    /**
+     * @return array<string, array{string, string, int, bool, string|null, string|null}>
+     */
+    public static function harianStartDateBoundaryProvider(): array
+    {
+        return [
+            'nov_22_yesterday_nov_21_rejected' => ['2026-11-22', '2026-11-21', 1, false, null, null],
+            'nov_22_today_nov_22_1_day_valid' => ['2026-11-22', '2026-11-22', 1, true, '2026-11-22', '50000.00'],
+            'nov_22_future_nov_28_5_days_rolls_to_dec_02' => ['2026-11-22', '2026-11-28', 5, true, '2026-12-02', '250000.00'],
+            'nov_22_end_of_month_nov_30_1_day_valid' => ['2026-11-22', '2026-11-30', 1, true, '2026-11-30', '50000.00'],
+            'nov_22_next_month_dec_01_rejected' => ['2026-11-22', '2026-12-01', 1, false, null, null],
+
+            // Last-day-of-month edge case: frozen at 2026-11-30 -> only 2026-11-30 accepted
+            'last_day_nov_30_yesterday_nov_29_rejected' => ['2026-11-30', '2026-11-29', 1, false, null, null],
+            'last_day_nov_30_today_nov_30_1_day_valid' => ['2026-11-30', '2026-11-30', 1, true, '2026-11-30', '50000.00'],
+            'last_day_nov_30_today_nov_30_3_days_rolls_to_dec_02' => ['2026-11-30', '2026-11-30', 3, true, '2026-12-02', '150000.00'],
+            'last_day_nov_30_next_month_dec_01_rejected' => ['2026-11-30', '2026-12-01', 1, false, null, null],
+        ];
+    }
+
+    #[DataProvider('harianStartDateBoundaryProvider')]
+    public function test_harian_start_date_allows_today_through_end_of_current_month_only(
+        string $frozenToday,
+        string $candidateStartDate,
+        int $jumlahHari,
+        bool $shouldSucceed,
+        ?string $expectedEndDate,
+        ?string $expectedTotalCost
+    ): void {
+        // Arrange
+        Carbon::setTestNow(Carbon::parse($frozenToday.' 10:00:00', 'Asia/Jakarta'));
+        $garage = new Garage([
+            'type' => Garage::TYPE_MOBIL,
+            'daily_rate' => '50000.00',
+            'kwh_rate' => null,
+        ]);
+        $startDate = Carbon::parse($candidateStartDate, 'Asia/Jakarta');
+
+        // Act & Assert
+        if (! $shouldSucceed) {
+            try {
+                $this->service->calculateInitialQuote(
+                    garage: $garage,
+                    vehicleType: Rental::VEHICLE_MOBIL,
+                    rentalType: Rental::TYPE_HARIAN,
+                    jumlahHari: $jumlahHari,
+                    startDate: $startDate
+                );
+                $this->fail("Expected ValidationException for harian start_date={$candidateStartDate} when today={$frozenToday}.");
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('start_date', $exception->errors());
+            }
+
+            return;
+        }
+
+        $quote = $this->service->calculateInitialQuote(
+            garage: $garage,
+            vehicleType: Rental::VEHICLE_MOBIL,
+            rentalType: Rental::TYPE_HARIAN,
+            jumlahHari: $jumlahHari,
+            startDate: $startDate
+        );
+
+        $this->assertSame($candidateStartDate, $quote['start_date']->toDateString());
+        $this->assertSame($expectedEndDate, $quote['end_date']->toDateString());
+        $this->assertSame($jumlahHari, $quote['duration_days']);
+        $this->assertSame('0.00', $quote['ev_charging_fee']);
+        $this->assertSame($expectedTotalCost, $quote['total_cost']);
+    }
+
+    /**
+     * @return array<string, array{string, bool, string|null, string|null}>
+     */
+    public static function bulananStartDateProvider(): array
+    {
+        return [
+            'bulanan_past_nov_21_rejected' => ['2026-11-21', false, null, null],
+            'bulanan_today_nov_22_accepted' => ['2026-11-22', true, '2026-12-21', '1250000.00'],
+            'bulanan_future_same_month_nov_25_rejected' => ['2026-11-25', false, null, null],
+            'bulanan_future_next_month_dec_01_rejected' => ['2026-12-01', false, null, null],
+        ];
+    }
+
+    #[DataProvider('bulananStartDateProvider')]
+    public function test_bulanan_strictly_requires_today_as_start_date(
+        string $candidateStartDate,
+        bool $shouldSucceed,
+        ?string $expectedEndDate,
+        ?string $expectedTotalCost
+    ): void {
+        // Arrange
+        Carbon::setTestNow(Carbon::create(2026, 11, 22, 10, 0, 0, 'Asia/Jakarta'));
+        $garage = new Garage([
+            'type' => Garage::TYPE_MOBIL,
+            'daily_rate' => '50000.00',
+            'kwh_rate' => null,
+        ]);
+        $startDate = Carbon::parse($candidateStartDate, 'Asia/Jakarta');
+
+        // Act & Assert
+        if (! $shouldSucceed) {
+            try {
+                $this->service->calculateInitialQuote(
+                    garage: $garage,
+                    vehicleType: Rental::VEHICLE_MOBIL,
+                    rentalType: Rental::TYPE_BULANAN,
+                    startDate: $startDate
+                );
+                $this->fail("Expected ValidationException for bulanan start_date={$candidateStartDate} when today=2026-11-22.");
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('start_date', $exception->errors());
+            }
+
+            return;
+        }
+
+        $quote = $this->service->calculateInitialQuote(
+            garage: $garage,
+            vehicleType: Rental::VEHICLE_MOBIL,
+            rentalType: Rental::TYPE_BULANAN,
+            startDate: $startDate
+        );
+
+        $this->assertSame('2026-11-22', $quote['start_date']->toDateString());
+        $this->assertSame($expectedEndDate, $quote['end_date']->toDateString());
+        $this->assertSame(30, $quote['duration_days']);
+        $this->assertSame($expectedTotalCost, $quote['total_cost']);
+    }
 }

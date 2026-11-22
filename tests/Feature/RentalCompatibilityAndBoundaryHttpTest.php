@@ -256,6 +256,7 @@ class RentalCompatibilityAndBoundaryHttpTest extends TestCase
             'vehicle_type' => $vehicleType,
             'vehicle_brand_type' => 'Test Vehicle Model',
             'rental_type' => Rental::TYPE_HARIAN,
+            'start_date' => '2026-11-21',
             'jumlah_hari' => 1,
             'garage_type' => $garageType,
             'garage_id' => $garage->id,
@@ -340,6 +341,7 @@ class RentalCompatibilityAndBoundaryHttpTest extends TestCase
             'license_plate' => 'B 4444 AA',
             'vehicle_brand_type' => 'Honda Brio',
             'rental_type' => Rental::TYPE_HARIAN,
+            'start_date' => Carbon::today('Asia/Jakarta')->toDateString(),
             'jumlah_hari' => $jumlahHari,
             'garage_type' => Garage::TYPE_MOBIL,
             'garage_id' => $garage->id,
@@ -400,5 +402,97 @@ class RentalCompatibilityAndBoundaryHttpTest extends TestCase
         $this->assertSame('2026-12-20', $rental->end_date->toDateString());
         $this->assertSame(30, $rental->initial_duration_days);
         $this->assertSame('1250000.00', $rental->total_cost);
+    }
+
+    /**
+     * @return array<string, array{string|null}>
+     */
+    public static function invalidHarianStartDateHttpProvider(): array
+    {
+        return [
+            'yesterday_2026_11_21' => ['2026-11-21'],
+            'next_month_2026_12_01' => ['2026-12-01'],
+            'missing_start_date' => [null],
+        ];
+    }
+
+    #[DataProvider('invalidHarianStartDateHttpProvider')]
+    public function test_harian_rejects_out_of_range_or_missing_start_date_over_http(?string $invalidStartDate): void
+    {
+        // Arrange
+        Storage::fake('public');
+        Carbon::setTestNow(Carbon::create(2026, 11, 22, 10, 0, 0, 'Asia/Jakarta'));
+        $tenant = User::factory()->approved()->create();
+        $garage = Garage::factory()->mobil()->create([
+            'daily_rate' => '50000.00',
+            'status' => Garage::STATUS_AVAILABLE,
+        ]);
+
+        $payload = [
+            'vehicle_type' => Rental::VEHICLE_MOBIL,
+            'license_plate' => 'B 8888 AA',
+            'vehicle_brand_type' => 'Honda Jazz',
+            'rental_type' => Rental::TYPE_HARIAN,
+            'jumlah_hari' => 2,
+            'garage_type' => Garage::TYPE_MOBIL,
+            'garage_id' => $garage->id,
+            'bukti_bayar' => $this->createFakeProofImage('invalid-start.png'),
+        ];
+
+        if ($invalidStartDate !== null) {
+            $payload['start_date'] = $invalidStartDate;
+        }
+
+        // Act & Assert
+        $this->actingAs($tenant)
+            ->post(route('tenant.rentals.store'), $payload)
+            ->assertSessionHasErrors('start_date');
+
+        $this->assertDatabaseCount('rentals', 0);
+        $this->assertSame(Garage::STATUS_AVAILABLE, $garage->fresh()->status);
+        $this->assertSame([], Storage::disk('public')->allFiles('payment_proofs'));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function tamperedBulananStartDateHttpProvider(): array
+    {
+        return [
+            'tampered_future_same_month_2026_11_25' => ['2026-11-25'],
+            'tampered_future_next_month_2026_12_01' => ['2026-12-01'],
+            'tampered_past_2026_11_21' => ['2026-11-21'],
+        ];
+    }
+
+    #[DataProvider('tamperedBulananStartDateHttpProvider')]
+    public function test_bulanan_rejects_tampered_non_today_start_date_over_http(string $tamperedStartDate): void
+    {
+        // Arrange
+        Storage::fake('public');
+        Carbon::setTestNow(Carbon::create(2026, 11, 22, 10, 0, 0, 'Asia/Jakarta'));
+        $tenant = User::factory()->approved()->create();
+        $garage = Garage::factory()->mobil()->create([
+            'daily_rate' => '50000.00',
+            'status' => Garage::STATUS_AVAILABLE,
+        ]);
+
+        // Act & Assert
+        $this->actingAs($tenant)
+            ->post(route('tenant.rentals.store'), [
+                'vehicle_type' => Rental::VEHICLE_MOBIL,
+                'license_plate' => 'B 9999 BB',
+                'vehicle_brand_type' => 'Toyota Camry',
+                'rental_type' => Rental::TYPE_BULANAN,
+                'start_date' => $tamperedStartDate,
+                'garage_type' => Garage::TYPE_MOBIL,
+                'garage_id' => $garage->id,
+                'bukti_bayar' => $this->createFakeProofImage('tampered-bulanan.png'),
+            ])
+            ->assertSessionHasErrors('start_date');
+
+        $this->assertDatabaseCount('rentals', 0);
+        $this->assertSame(Garage::STATUS_AVAILABLE, $garage->fresh()->status);
+        $this->assertSame([], Storage::disk('public')->allFiles('payment_proofs'));
     }
 }

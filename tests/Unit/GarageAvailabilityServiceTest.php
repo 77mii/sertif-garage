@@ -109,4 +109,39 @@ class GarageAvailabilityServiceTest extends TestCase
         $this->assertSame(0, $releasedCount);
         $this->assertSame(Garage::STATUS_USED, $garage->fresh()->status);
     }
+
+    public function test_future_reservation_keeps_garage_used_until_day_after_end_date(): void
+    {
+        // Arrange: future reservation Nov 25..27 while today is Nov 22
+        $garage = Garage::factory()->mobil()->used()->create();
+        $futureRental = Rental::factory()->create([
+            'garage_id' => $garage->id,
+            'rental_type' => Rental::TYPE_HARIAN,
+            'start_date' => '2026-11-25',
+            'end_date' => '2026-11-27',
+            'initial_duration_days' => 3,
+        ]);
+
+        // Act & Assert on 2026-11-22 (before start_date): stays 'used', NOT in active rentals
+        Carbon::setTestNow(Carbon::create(2026, 11, 22, 10, 0, 0, 'Asia/Jakarta'));
+        $this->assertSame(0, $this->service->syncStatuses());
+        $this->assertSame(Garage::STATUS_USED, $garage->fresh()->status);
+        $this->assertFalse($this->service->getActiveRentals()->contains('id', $futureRental->id));
+
+        // Act & Assert on 2026-11-25 (start_date): stays 'used', NOW appears in active rentals
+        Carbon::setTestNow(Carbon::create(2026, 11, 25, 0, 5, 0, 'Asia/Jakarta'));
+        $this->assertSame(0, $this->service->syncStatuses());
+        $this->assertSame(Garage::STATUS_USED, $garage->fresh()->status);
+        $this->assertTrue($this->service->getActiveRentals()->contains('id', $futureRental->id));
+
+        // Act & Assert on 2026-11-27 (end_date): stays 'used'
+        Carbon::setTestNow(Carbon::create(2026, 11, 27, 23, 59, 0, 'Asia/Jakarta'));
+        $this->assertSame(0, $this->service->syncStatuses());
+        $this->assertSame(Garage::STATUS_USED, $garage->fresh()->status);
+
+        // Act & Assert on 2026-11-28 (end_date + 1 day): flips to 'available'
+        Carbon::setTestNow(Carbon::create(2026, 11, 28, 0, 5, 0, 'Asia/Jakarta'));
+        $this->assertSame(1, $this->service->syncStatuses());
+        $this->assertSame(Garage::STATUS_AVAILABLE, $garage->fresh()->status);
+    }
 }

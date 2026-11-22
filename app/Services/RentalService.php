@@ -6,6 +6,7 @@ use App\Models\Garage;
 use App\Models\Rental;
 use App\Models\RentalPayment;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -28,6 +29,7 @@ class RentalService
      *     vehicle_brand_type?: mixed,
      *     battery_capacity_kwh?: mixed,
      *     rental_type?: mixed,
+     *     start_date?: mixed,
      *     jumlah_hari?: mixed,
      *     proof_image_path?: mixed
      * }  $data
@@ -42,8 +44,16 @@ class RentalService
             ]);
         }
 
+        $today = $this->availabilityService->today();
+        $todayString = $today->toDateString();
+        $endOfMonthString = $today->copy()->endOfMonth()->toDateString();
+
         $vehicleType = isset($data['vehicle_type']) ? (string) $data['vehicle_type'] : '';
         $rentalType = isset($data['rental_type']) ? (string) $data['rental_type'] : '';
+
+        $startDateRules = $rentalType === Rental::TYPE_HARIAN
+            ? ['nullable', 'date', "after_or_equal:{$todayString}", "before_or_equal:{$endOfMonthString}"]
+            : ['nullable', 'date', "date_equals:{$todayString}"];
 
         $validated = Validator::make(
             $data,
@@ -58,6 +68,7 @@ class RentalService
                     ? ['required', 'numeric', 'gt:0']
                     : ['nullable'],
                 'rental_type' => ['required', 'string', Rule::in(Rental::RENTAL_TYPES)],
+                'start_date' => $startDateRules,
                 'jumlah_hari' => $rentalType === Rental::TYPE_HARIAN
                     ? ['required', 'integer', 'min:1']
                     : ['nullable'],
@@ -74,19 +85,22 @@ class RentalService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $hasActiveRental = Rental::query()
+            $hasBlockingRental = Rental::query()
                 ->where('garage_id', $garage->id)
-                ->activeOn($today)
+                ->whereDate('end_date', '>=', $today->toDateString())
                 ->exists();
 
-            if (! $garage->isAvailable() || $hasActiveRental) {
+            if (! $garage->isAvailable() || $hasBlockingRental) {
                 throw ValidationException::withMessages([
-                    'garage_id' => 'Garasi yang dipilih sedang digunakan dan tidak tersedia hari ini.',
+                    'garage_id' => 'Garasi yang dipilih sedang digunakan dan tidak tersedia.',
                 ]);
             }
 
             $resolvedVehicleType = (string) $validated['vehicle_type'];
             $resolvedRentalType = (string) $validated['rental_type'];
+            $resolvedStartDate = isset($validated['start_date']) && $validated['start_date'] !== ''
+                ? Carbon::parse((string) $validated['start_date'], 'Asia/Jakarta')->startOfDay()
+                : $today->copy();
             $jumlahHari = $resolvedRentalType === Rental::TYPE_HARIAN
                 ? (int) $validated['jumlah_hari']
                 : null;
@@ -103,7 +117,7 @@ class RentalService
                 rentalType: $resolvedRentalType,
                 jumlahHari: $jumlahHari,
                 batteryCapacityKwh: $batteryCapacityKwh,
-                startDate: $today
+                startDate: $resolvedStartDate
             );
 
             $rental = Rental::query()->create([

@@ -24,7 +24,15 @@ class StoreRentalRequest extends FormRequest
      */
     public function rules(): array
     {
-        $maxDailyDays = Carbon::today('Asia/Jakarta')->daysInMonth - 1;
+        $today = Carbon::today('Asia/Jakarta');
+        $todayString = $today->toDateString();
+        $endOfMonthString = $today->copy()->endOfMonth()->toDateString();
+        $maxDailyDays = $today->daysInMonth - 1;
+        $rentalType = (string) $this->input('rental_type');
+
+        $startDateRules = $rentalType === Rental::TYPE_HARIAN
+            ? ['required', 'date', "after_or_equal:{$todayString}", "before_or_equal:{$endOfMonthString}"]
+            : ['nullable', 'date', "date_equals:{$todayString}"];
 
         return [
             'vehicle_type' => ['required', 'string', Rule::in(Rental::VEHICLE_TYPES)],
@@ -42,6 +50,7 @@ class StoreRentalRequest extends FormRequest
                 'gt:0',
             ],
             'rental_type' => ['required', 'string', Rule::in(Rental::RENTAL_TYPES)],
+            'start_date' => $startDateRules,
             'jumlah_hari' => [
                 Rule::requiredIf(fn (): bool => $this->input('rental_type') === Rental::TYPE_HARIAN),
                 'nullable',
@@ -75,7 +84,10 @@ class StoreRentalRequest extends FormRequest
      */
     public function messages(): array
     {
-        $maxDailyDays = Carbon::today('Asia/Jakarta')->daysInMonth - 1;
+        $today = Carbon::today('Asia/Jakarta');
+        $todayString = $today->toDateString();
+        $endOfMonthString = $today->copy()->endOfMonth()->toDateString();
+        $maxDailyDays = $today->daysInMonth - 1;
 
         return [
             'vehicle_type.required' => 'Tipe kendaraan wajib dipilih.',
@@ -84,6 +96,11 @@ class StoreRentalRequest extends FormRequest
             'battery_capacity_kwh.required' => 'Kapasitas baterai (kWh) wajib diisi untuk mobil listrik.',
             'battery_capacity_kwh.gt' => 'Kapasitas baterai harus lebih besar dari 0 kWh.',
             'rental_type.required' => 'Tipe sewa wajib dipilih.',
+            'start_date.required' => 'Tanggal mulai sewa wajib diisi untuk sewa harian.',
+            'start_date.date' => 'Format tanggal mulai sewa tidak valid.',
+            'start_date.after_or_equal' => "Tanggal mulai sewa harian minimal hari ini ({$todayString}).",
+            'start_date.before_or_equal' => "Tanggal mulai sewa harian maksimal akhir bulan ini ({$endOfMonthString}).",
+            'start_date.date_equals' => "Tanggal mulai sewa bulanan harus hari ini ({$todayString}).",
             'jumlah_hari.required' => 'Jumlah hari wajib diisi untuk sewa harian.',
             'jumlah_hari.min' => 'Jumlah hari sewa harian minimal 1 hari.',
             'jumlah_hari.max' => "Jumlah hari sewa harian maksimal {$maxDailyDays} hari untuk bulan ini.",

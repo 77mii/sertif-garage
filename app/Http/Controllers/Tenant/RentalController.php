@@ -38,6 +38,7 @@ class RentalController extends Controller
 
         return view('tenant.rentals.create', [
             'today' => $today,
+            'endOfMonth' => $today->copy()->endOfMonth(),
             'daysInMonth' => $today->daysInMonth,
             'maxDailyDays' => $this->pricingService->maxDailyDays($today),
             'availableGarages' => $availableGarages,
@@ -59,6 +60,7 @@ class RentalController extends Controller
                 'vehicle_brand_type' => $validated['vehicle_brand_type'],
                 'battery_capacity_kwh' => $validated['battery_capacity_kwh'] ?? null,
                 'rental_type' => $validated['rental_type'],
+                'start_date' => $validated['start_date'] ?? null,
                 'jumlah_hari' => $validated['jumlah_hari'] ?? null,
                 'proof_image_path' => $proofPath,
             ]);

@@ -58,6 +58,50 @@ class RentalPricingService
     }
 
     /**
+     * Resolve and validate start_date against today (Asia/Jakarta).
+     * - harian: today <= start_date <= today->copy()->endOfMonth()
+     * - bulanan: strictly locked to today (start_date->isSameDay($today))
+     *
+     * @throws ValidationException
+     */
+    public function resolveStartDate(
+        string $rentalType,
+        ?Carbon $startDate = null,
+        ?Carbon $today = null
+    ): Carbon {
+        $todayDate = ($today ?? Carbon::today('Asia/Jakarta'))->copy()->startOfDay();
+        $endOfMonth = $todayDate->copy()->endOfMonth()->startOfDay();
+
+        $resolvedStart = $startDate === null
+            ? $todayDate->copy()
+            : Carbon::createFromFormat('Y-m-d', $startDate->toDateString(), 'Asia/Jakarta')->startOfDay();
+
+        if ($rentalType === Rental::TYPE_HARIAN) {
+            if ($resolvedStart->lt($todayDate) || $resolvedStart->gt($endOfMonth)) {
+                throw ValidationException::withMessages([
+                    'start_date' => "Tanggal mulai sewa harian harus antara {$todayDate->toDateString()} sampai {$endOfMonth->toDateString()}.",
+                ]);
+            }
+
+            return $resolvedStart;
+        }
+
+        if ($rentalType === Rental::TYPE_BULANAN) {
+            if (! $resolvedStart->isSameDay($todayDate)) {
+                throw ValidationException::withMessages([
+                    'start_date' => "Tanggal mulai sewa bulanan harus hari ini ({$todayDate->toDateString()}).",
+                ]);
+            }
+
+            return $resolvedStart;
+        }
+
+        throw ValidationException::withMessages([
+            'rental_type' => 'Tipe sewa tidak valid.',
+        ]);
+    }
+
+    /**
      * Maximum allowed days for a harian rental starting on the given date.
      */
     public function maxDailyDays(Carbon $startDate): int
@@ -188,7 +232,7 @@ class RentalPricingService
             ]);
         }
 
-        $start = ($startDate ?? Carbon::today('Asia/Jakarta'))->copy()->startOfDay();
+        $start = $this->resolveStartDate($rentalType, $startDate);
         $durationDays = $this->calculateInitialDurationDays($rentalType, $start, $jumlahHari);
         $endDate = $this->calculateInitialEndDate($start, $durationDays);
 

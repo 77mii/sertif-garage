@@ -16,6 +16,11 @@
             'mobil_listrik' => 'Mobil Listrik',
         ];
         $confirmation = session('rental_confirmation');
+        $todayIso = $today->toDateString();
+        $endOfMonthIso = $endOfMonth->toDateString();
+        $initialStartDate = old('rental_type', 'harian') === 'bulanan'
+            ? $todayIso
+            : old('start_date', $todayIso);
     @endphp
 
     <div class="mx-auto max-w-4xl space-y-6">
@@ -159,12 +164,18 @@
                     </div>
 
                     <div>
-                        <label for="start_date_display" class="block text-sm font-medium text-slate-700">Tanggal Mulai Sewa</label>
-                        <input id="start_date_display"
-                               type="text"
-                               value="{{ $today->toDateString() }}"
-                               readonly
-                               class="mt-1 block w-full rounded-lg border border-slate-200 bg-slate-100 px-3.5 py-2.5 font-mono text-sm text-slate-700">
+                        <label for="start_date" class="block text-sm font-medium text-slate-700">Tanggal Mulai Sewa</label>
+                        <input id="start_date"
+                               name="start_date"
+                               type="date"
+                               min="{{ $todayIso }}"
+                               max="{{ $endOfMonthIso }}"
+                               value="{{ $initialStartDate }}"
+                               required
+                               class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 font-mono text-sm text-slate-900 shadow-xs focus:border-slate-900 focus:ring-2 focus:ring-slate-900/15 focus:outline-none">
+                        <p id="start_date_hint" class="mt-1 text-xs text-slate-500">
+                            Hanya dapat memilih tanggal hari ini ({{ $todayIso }}) hingga akhir bulan ini ({{ $endOfMonthIso }}).
+                        </p>
                     </div>
 
                     <div>
@@ -253,7 +264,8 @@
     <script>
         (function () {
             const config = {
-                today: @json($today->toDateString()),
+                today: @json($todayIso),
+                endOfMonth: @json($endOfMonthIso),
                 daysInMonth: @json($daysInMonth),
                 maxDailyDays: @json($maxDailyDays),
                 garages: @json($garagePayload),
@@ -275,6 +287,8 @@
             const rentalTypeEl = document.getElementById('rental_type');
             const jumlahHariWrapper = document.getElementById('jumlah_hari_wrapper');
             const jumlahHariInput = document.getElementById('jumlah_hari');
+            const startDateInput = document.getElementById('start_date');
+            const startDateHint = document.getElementById('start_date_hint');
             const endDateDisplay = document.getElementById('end_date_display');
             const garageTypeEl = document.getElementById('garage_type');
             const garageIdEl = document.getElementById('garage_id');
@@ -399,6 +413,14 @@
                 updateQuote();
             }
 
+            function resolvePreviewStartDate() {
+                const raw = (startDateInput.value || '').trim();
+                if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+                    return raw;
+                }
+                return config.today;
+            }
+
             function updatePeriodFields() {
                 const isBulanan = rentalTypeEl.value === 'bulanan';
 
@@ -406,13 +428,34 @@
                     jumlahHariWrapper.classList.add('hidden');
                     jumlahHariInput.disabled = true;
                     jumlahHariInput.required = false;
+
+                    startDateInput.value = config.today;
+                    startDateInput.readOnly = true;
+                    startDateInput.min = config.today;
+                    startDateInput.max = config.today;
+                    startDateInput.classList.remove('bg-white', 'border-slate-300', 'text-slate-900');
+                    startDateInput.classList.add('bg-slate-100', 'border-slate-200', 'text-slate-700', 'cursor-not-allowed');
+                    startDateHint.textContent = `Sewa bulanan selalu dimulai hari ini (${config.today}).`;
+
                     endDateDisplay.value = addDaysToIso(config.today, config.daysInMonth - 1);
                 } else {
                     jumlahHariWrapper.classList.remove('hidden');
                     jumlahHariInput.disabled = false;
                     jumlahHariInput.required = true;
+
+                    startDateInput.readOnly = false;
+                    startDateInput.min = config.today;
+                    startDateInput.max = config.endOfMonth;
+                    if (!startDateInput.value) {
+                        startDateInput.value = config.today;
+                    }
+                    startDateInput.classList.remove('bg-slate-100', 'border-slate-200', 'text-slate-700', 'cursor-not-allowed');
+                    startDateInput.classList.add('bg-white', 'border-slate-300', 'text-slate-900');
+                    startDateHint.textContent = `Hanya dapat memilih tanggal hari ini (${config.today}) hingga akhir bulan ini (${config.endOfMonth}).`;
+
+                    const startIso = resolvePreviewStartDate();
                     const days = Math.max(1, Math.min(config.maxDailyDays, parseInt(jumlahHariInput.value || '1', 10) || 1));
-                    endDateDisplay.value = addDaysToIso(config.today, days - 1);
+                    endDateDisplay.value = addDaysToIso(startIso, days - 1);
                 }
 
                 updateQuote();
@@ -463,6 +506,8 @@
             garageTypeEl.addEventListener('change', () => updateAvailableGarages(false));
             garageIdEl.addEventListener('change', updateQuote);
             rentalTypeEl.addEventListener('change', updatePeriodFields);
+            startDateInput.addEventListener('change', updatePeriodFields);
+            startDateInput.addEventListener('input', updatePeriodFields);
             jumlahHariInput.addEventListener('input', updatePeriodFields);
             batteryInput.addEventListener('input', updateQuote);
 

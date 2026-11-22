@@ -20,7 +20,7 @@ class GarageAvailabilityService
 
     /**
      * Lazily flip garages from 'used' back to 'available' when they have no
-     * active rental covering today (start_date <= today AND end_date >= today).
+     * active or upcoming rental (end_date >= today).
      */
     public function syncStatuses(?Carbon $today = null): int
     {
@@ -29,8 +29,7 @@ class GarageAvailabilityService
         return Garage::query()
             ->where('status', Garage::STATUS_USED)
             ->whereDoesntHave('rentals', function (Builder $query) use ($date): void {
-                $query->whereDate('start_date', '<=', $date)
-                    ->whereDate('end_date', '>=', $date);
+                $query->whereDate('end_date', '>=', $date);
             })
             ->update([
                 'status' => Garage::STATUS_AVAILABLE,

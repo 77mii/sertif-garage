@@ -94,6 +94,7 @@ class EndToEndRentalLifecycleHttpTest extends TestCase
                 'license_plate' => 'B 1111 AA',
                 'vehicle_brand_type' => 'Toyota Rush',
                 'rental_type' => Rental::TYPE_HARIAN,
+                'start_date' => '2026-11-28',
                 'jumlah_hari' => 3,
                 'garage_type' => Garage::TYPE_MOBIL,
                 'garage_id' => $carGarage->id,
@@ -278,5 +279,138 @@ class EndToEndRentalLifecycleHttpTest extends TestCase
             ->assertSessionHasErrors('new_end_date');
 
         $this->assertSame('2026-11-24', $rental->fresh()->end_date->toDateString());
+    }
+
+    public function test_future_dated_harian_booking_locks_garage_immediately_and_blocks_extension_until_start_date(): void
+    {
+        // Arrange
+        Storage::fake('public');
+        Carbon::setTestNow(Carbon::create(2026, 11, 22, 10, 0, 0, 'Asia/Jakarta'));
+
+        $admin = User::factory()->admin()->create();
+        $tenant = User::factory()->approved()->create(['nama_lengkap' => 'Budi Santoso']);
+        $otherTenant = User::factory()->approved()->create(['nama_lengkap' => 'Sari Wijaya']);
+        $garage = Garage::factory()->mobil()->create([
+            'code' => 'C001',
+            'daily_rate' => '50000.00',
+            'status' => Garage::STATUS_AVAILABLE,
+        ]);
+
+        // 1. Sewa Baru page exposes min=today and max=endOfMonth for start_date and shows C001 available
+        $this->actingAs($tenant)
+            ->get(route('tenant.rentals.create'))
+            ->assertOk()
+            ->assertSee('min="2026-11-22"', false)
+            ->assertSee('max="2026-11-30"', false)
+            ->assertSee('value="2026-11-22"', false)
+            ->assertSee('C001');
+
+        // 2. Approved tenant submits Harian on 2026-11-22 with start_date = 2026-11-28, jumlah_hari = 5
+        //    -> end_date = 2026-12-02, total_cost = 250,000.00, garage immediately marked 'used'
+        $this->actingAs($tenant)
+            ->post(route('tenant.rentals.store'), [
+                'vehicle_type' => Rental::VEHICLE_MOBIL,
+                'license_plate' => 'B 5555 FW',
+                'vehicle_brand_type' => 'Toyota Veloz',
+                'rental_type' => Rental::TYPE_HARIAN,
+                'start_date' => '2026-11-28',
+                'jumlah_hari' => 5,
+                'garage_type' => Garage::TYPE_MOBIL,
+                'garage_id' => $garage->id,
+                'bukti_bayar' => $this->createFakeProofImage('future-c001.png'),
+            ])
+            ->assertRedirect(route('tenant.rentals.create'))
+            ->assertSessionHasNoErrors();
+
+        $rental = Rental::query()->where('garage_id', $garage->id)->firstOrFail();
+        $this->assertSame('2026-11-28', $rental->start_date->toDateString());
+        $this->assertSame('2026-12-02', $rental->end_date->toDateString());
+        $this->assertSame(5, $rental->initial_duration_days);
+        $this->assertSame('250000.00', $rental->total_cost);
+        $this->assertSame(Garage::STATUS_USED, $garage->fresh()->status);
+
+        // 3. Subsequent Sewa Baru page load on 2026-11-22 hides C001 and blocks double-booking
+        $this->flushSession();
+        $this->actingAs($otherTenant)
+            ->get(route('tenant.rentals.create'))
+            ->assertOk()
+            ->assertViewHas('availableGarages', fn ($garages): bool => $garages->isEmpty())
+            ->assertViewHas('garagePayload', [])
+            ->assertDontSee('C001');
+
+        $this->actingAs($otherTenant)
+            ->post(route('tenant.rentals.store'), [
+                'vehicle_type' => Rental::VEHICLE_MOBIL,
+                'license_plate' => 'B 6666 XX',
+                'vehicle_brand_type' => 'Honda HR-V',
+                'rental_type' => Rental::TYPE_HARIAN,
+                'start_date' => '2026-11-22',
+                'jumlah_hari' => 2,
+                'garage_type' => Garage::TYPE_MOBIL,
+                'garage_id' => $garage->id,
+                'bukti_bayar' => $this->createFakeProofImage('double-book.png'),
+            ])
+            ->assertSessionHasErrors('garage_id');
+        $this->assertDatabaseCount('rentals', 1);
+
+        // 4. Admin Perpanjang Status Garasi on 2026-11-22 does NOT list the future reservation
+        //    and direct GET/POST to extend it is rejected, while C001 remains 'used'
+        $this->actingAs($admin)
+            ->get(route('admin.extensions.index'))
+            ->assertOk()
+            ->assertDontSee('C001');
+        $this->assertSame(Garage::STATUS_USED, $garage->fresh()->status);
+
+        $this->actingAs($admin)
+            ->get(route('admin.extensions.show', $rental))
+            ->assertRedirect(route('admin.extensions.index'))
+            ->assertSessionHas('error');
+
+        $this->actingAs($admin)
+            ->post(route('admin.extensions.store', $rental), [
+                'new_end_date' => '2026-12-05',
+                'bukti_bayar' => $this->createFakeProofImage('early-ext.png'),
+            ])
+            ->assertSessionHasErrors('rental_id');
+
+        $this->assertSame('2026-12-02', $rental->fresh()->end_date->toDateString());
+        $this->assertSame('250000.00', $rental->fresh()->total_cost);
+        $this->assertDatabaseCount('rental_payments', 1);
+
+        // 5. Once clock moves to 2026-11-28 (start_date), it appears in Perpanjang Status Garasi and can be extended
+        Carbon::setTestNow(Carbon::create(2026, 11, 28, 9, 0, 0, 'Asia/Jakarta'));
+
+        $this->actingAs($admin)
+            ->get(route('admin.extensions.index'))
+            ->assertOk()
+            ->assertSee('C001')
+            ->assertSee('Budi Santoso');
+
+        $this->actingAs($admin)
+            ->post(route('admin.extensions.store', $rental), [
+                'new_end_date' => '2026-12-05',
+                'bukti_bayar' => $this->createFakeProofImage('active-ext.png'),
+            ])
+            ->assertRedirect(route('admin.extensions.show', $rental))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('2026-12-05', $rental->fresh()->end_date->toDateString());
+        $this->assertSame('400000.00', $rental->fresh()->total_cost);
+        $this->assertDatabaseCount('rental_payments', 2);
+
+        // 6. Report still attributes cumulative revenue (400,000) to start_date 2026-11-28
+        $this->actingAs($admin)
+            ->get(route('admin.reports.index', ['year' => 2026, 'month' => 11]))
+            ->assertOk()
+            ->assertSee('Rp 400.000')
+            ->assertSee('2026-11-28');
+
+        // 7. On 2026-12-06 (end_date + 1 day), lazy sync flips C001 back to 'available'
+        Carbon::setTestNow(Carbon::create(2026, 12, 6, 8, 0, 0, 'Asia/Jakarta'));
+        $this->actingAs($otherTenant)
+            ->get(route('tenant.rentals.create'))
+            ->assertOk()
+            ->assertSee('C001');
+        $this->assertSame(Garage::STATUS_AVAILABLE, $garage->fresh()->status);
     }
 }
