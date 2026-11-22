@@ -65,7 +65,9 @@ class DemoSeeder extends Seeder
             batteryCapacityKwh: null,
             rentalType: Rental::TYPE_HARIAN,
             startDate: $today->copy()->subDays(2),
-            jumlahHari: 5
+            jumlahHari: 5,
+            today: $today,
+            now: $now
         );
 
         $this->seedRental(
@@ -76,11 +78,13 @@ class DemoSeeder extends Seeder
             garage: $garages['C001'],
             vehicleType: Rental::VEHICLE_MOBIL,
             licensePlate: 'B 1945 GRS',
-            vehicleBrandType: 'Toyota Kijang Innova Zenix',
+            vehicleBrandType: 'Toyota Avanza Veloz Q CVT',
             batteryCapacityKwh: null,
             rentalType: Rental::TYPE_HARIAN,
             startDate: $today->copy()->subDay(),
-            jumlahHari: 7
+            jumlahHari: 7,
+            today: $today,
+            now: $now
         );
 
         $this->seedRental(
@@ -95,7 +99,9 @@ class DemoSeeder extends Seeder
             batteryCapacityKwh: '72.60',
             rentalType: Rental::TYPE_BULANAN,
             startDate: $today->copy()->subDays(5),
-            jumlahHari: null
+            jumlahHari: null,
+            today: $today,
+            now: $now
         );
 
         $this->seedRental(
@@ -110,11 +116,37 @@ class DemoSeeder extends Seeder
             batteryCapacityKwh: '26.70',
             rentalType: Rental::TYPE_HARIAN,
             startDate: $today->copy(),
-            jumlahHari: 3
+            jumlahHari: 3,
+            today: $today,
+            now: $now
         );
 
-        // 5. Completed Historical Rentals (end_date < today)
-        // 5A. Earlier Months of Current Year (6 rentals across 5 earlier months, including 1 daily + 1 monthly extension)
+        // 5. Future-Dated Harian Reservation Later This Month (Option A Immediate Lock Showcase)
+        $endOfMonth = $today->copy()->endOfMonth()->startOfDay();
+        $futureStart = $today->copy()->addDays(3);
+        if ($futureStart->greaterThan($endOfMonth)) {
+            $futureStart = $endOfMonth->copy();
+        }
+
+        $this->seedRental(
+            pricingService: $pricingService,
+            extensionService: $extensionService,
+            admin: $admin,
+            tenant: $siti,
+            garage: $garages['C003'],
+            vehicleType: Rental::VEHICLE_MOBIL,
+            licensePlate: 'B 2468 ZNX',
+            vehicleBrandType: 'Toyota Kijang Innova Zenix',
+            batteryCapacityKwh: null,
+            rentalType: Rental::TYPE_HARIAN,
+            startDate: $futureStart,
+            jumlahHari: 5,
+            today: $today,
+            now: $now
+        );
+
+        // 6. Completed Historical Rentals (end_date < today — avoiding C003)
+        // 6A. Earlier Months of Current Year (6 rentals across 5 earlier months, including 1 daily + 1 monthly extension)
         $this->seedRental(
             pricingService: $pricingService,
             extensionService: $extensionService,
@@ -128,6 +160,8 @@ class DemoSeeder extends Seeder
             rentalType: Rental::TYPE_HARIAN,
             startDate: $this->earlierMonthStartDate($today, 5, 5),
             jumlahHari: 5,
+            today: $today,
+            now: $now,
             extension: ['added_days' => 4]
         );
 
@@ -136,14 +170,16 @@ class DemoSeeder extends Seeder
             extensionService: $extensionService,
             admin: $admin,
             tenant: $andi,
-            garage: $garages['C003'],
+            garage: $garages['C005'],
             vehicleType: Rental::VEHICLE_MOBIL,
             licensePlate: 'B 7710 KLM',
             vehicleBrandType: 'Honda Civic RS Turbo',
             batteryCapacityKwh: null,
             rentalType: Rental::TYPE_BULANAN,
             startDate: $this->earlierMonthStartDate($today, 4, 3),
-            jumlahHari: null
+            jumlahHari: null,
+            today: $today,
+            now: $now
         );
 
         $this->seedRental(
@@ -159,6 +195,8 @@ class DemoSeeder extends Seeder
             rentalType: Rental::TYPE_BULANAN,
             startDate: $this->earlierMonthStartDate($today, 3, 5),
             jumlahHari: null,
+            today: $today,
+            now: $now,
             extension: ['added_months' => 1]
         );
 
@@ -174,7 +212,9 @@ class DemoSeeder extends Seeder
             batteryCapacityKwh: null,
             rentalType: Rental::TYPE_HARIAN,
             startDate: $this->earlierMonthStartDate($today, 2, 10),
-            jumlahHari: 6
+            jumlahHari: 6,
+            today: $today,
+            now: $now
         );
 
         $this->seedRental(
@@ -189,7 +229,9 @@ class DemoSeeder extends Seeder
             batteryCapacityKwh: '61.00',
             rentalType: Rental::TYPE_HARIAN,
             startDate: $this->earlierMonthStartDate($today, 2, 18),
-            jumlahHari: 4
+            jumlahHari: 4,
+            today: $today,
+            now: $now
         );
 
         $this->seedRental(
@@ -204,10 +246,12 @@ class DemoSeeder extends Seeder
             batteryCapacityKwh: null,
             rentalType: Rental::TYPE_HARIAN,
             startDate: $this->earlierMonthStartDate($today, 1, 8),
-            jumlahHari: 10
+            jumlahHari: 10,
+            today: $today,
+            now: $now
         );
 
-        // 5B. Distinct Earlier Dates Inside the Current Month (4 completed rentals)
+        // 6B. Distinct Earlier Dates Inside the Current Month (4 completed rentals)
         $this->seedRental(
             pricingService: $pricingService,
             extensionService: $extensionService,
@@ -220,7 +264,9 @@ class DemoSeeder extends Seeder
             batteryCapacityKwh: null,
             rentalType: Rental::TYPE_HARIAN,
             startDate: $this->completedCurrentMonthStartDate($today, 2, 3, 20),
-            jumlahHari: 3
+            jumlahHari: 3,
+            today: $today,
+            now: $now
         );
 
         $this->seedRental(
@@ -228,14 +274,16 @@ class DemoSeeder extends Seeder
             extensionService: $extensionService,
             admin: $admin,
             tenant: $budi,
-            garage: $garages['C003'],
+            garage: $garages['C004'],
             vehicleType: Rental::VEHICLE_MOBIL,
             licensePlate: 'B 2104 HRV',
             vehicleBrandType: 'Honda HR-V SE CVT',
             batteryCapacityKwh: null,
             rentalType: Rental::TYPE_HARIAN,
             startDate: $this->completedCurrentMonthStartDate($today, 5, 4, 16),
-            jumlahHari: 4
+            jumlahHari: 4,
+            today: $today,
+            now: $now
         );
 
         $this->seedRental(
@@ -250,7 +298,9 @@ class DemoSeeder extends Seeder
             batteryCapacityKwh: '66.00',
             rentalType: Rental::TYPE_HARIAN,
             startDate: $this->completedCurrentMonthStartDate($today, 9, 3, 12),
-            jumlahHari: 3
+            jumlahHari: 3,
+            today: $today,
+            now: $now
         );
 
         $this->seedRental(
@@ -258,26 +308,28 @@ class DemoSeeder extends Seeder
             extensionService: $extensionService,
             admin: $admin,
             tenant: $andi,
-            garage: $garages['C004'],
+            garage: $garages['C005'],
             vehicleType: Rental::VEHICLE_MOBIL,
             licensePlate: 'B 6732 ERT',
             vehicleBrandType: 'Suzuki All New Ertiga Hybrid',
             batteryCapacityKwh: null,
             rentalType: Rental::TYPE_HARIAN,
             startDate: $this->completedCurrentMonthStartDate($today, 12, 4, 8),
-            jumlahHari: 4
+            jumlahHari: 4,
+            today: $today,
+            now: $now
         );
 
-        // 6. Sync Garage Statuses accurately for today
-        $activeGarageIds = Rental::query()
-            ->activeOn($today)
+        // 7. Sync Garage Statuses accurately for today (Option A: active + upcoming end_date >= today stay 'used')
+        $lockedGarageIds = Rental::query()
+            ->whereDate('end_date', '>=', $today->toDateString())
             ->pluck('garage_id')
             ->unique()
             ->all();
 
-        if ($activeGarageIds !== []) {
+        if ($lockedGarageIds !== []) {
             Garage::query()
-                ->whereIn('id', $activeGarageIds)
+                ->whereIn('id', $lockedGarageIds)
                 ->update([
                     'status' => Garage::STATUS_USED,
                     'updated_at' => $now,
@@ -382,7 +434,7 @@ class DemoSeeder extends Seeder
             ],
             [
                 'prefix' => 'C',
-                'count' => 5,
+                'count' => 6,
                 'type' => Garage::TYPE_MOBIL,
                 'daily_rate' => '50000.00',
                 'kwh_rate' => null,
@@ -435,15 +487,19 @@ class DemoSeeder extends Seeder
         string $rentalType,
         Carbon $startDate,
         ?int $jumlahHari,
+        Carbon $today,
+        Carbon $now,
         ?array $extension = null
     ): Rental {
-        $quote = $pricingService->calculateInitialQuote(
+        $quote = $this->calculateQuote(
+            pricingService: $pricingService,
             garage: $garage,
             vehicleType: $vehicleType,
             rentalType: $rentalType,
             jumlahHari: $jumlahHari,
             batteryCapacityKwh: $batteryCapacityKwh,
-            startDate: $startDate
+            startDate: $startDate,
+            today: $today
         );
 
         $existing = Rental::query()
@@ -457,7 +513,8 @@ class DemoSeeder extends Seeder
             return $existing;
         }
 
-        $initialTimestamp = $quote['start_date']->copy()->setTime(9, 30);
+        $candidateTimestamp = $quote['start_date']->copy()->setTime(9, 30);
+        $initialTimestamp = $candidateTimestamp->greaterThan($now) ? $now->copy() : $candidateTimestamp;
 
         $rental = new Rental([
             'user_id' => $tenant->id,
@@ -529,6 +586,77 @@ class DemoSeeder extends Seeder
         }
 
         return $rental;
+    }
+
+    /**
+     * Compute an initial rental quote using RentalPricingService.
+     *
+     * For bookings starting today or later this month, delegates directly to
+     * RentalPricingService::calculateInitialQuote(). For already-started or
+     * historical bookings, composes RentalPricingService's exact public methods
+     * anchored on the booking's own start date so spec math stays 100% identical.
+     *
+     * @return array{
+     *     start_date: Carbon,
+     *     end_date: Carbon,
+     *     duration_days: int,
+     *     base_cost: string,
+     *     ev_charging_fee: string,
+     *     total_cost: string
+     * }
+     */
+    private function calculateQuote(
+        RentalPricingService $pricingService,
+        Garage $garage,
+        string $vehicleType,
+        string $rentalType,
+        ?int $jumlahHari,
+        ?string $batteryCapacityKwh,
+        Carbon $startDate,
+        Carbon $today
+    ): array {
+        if ($startDate->greaterThanOrEqualTo($today)) {
+            return $pricingService->calculateInitialQuote(
+                garage: $garage,
+                vehicleType: $vehicleType,
+                rentalType: $rentalType,
+                jumlahHari: $jumlahHari,
+                batteryCapacityKwh: $batteryCapacityKwh,
+                startDate: $startDate
+            );
+        }
+
+        if (! $pricingService->isCompatible($vehicleType, $garage->type)) {
+            throw new \InvalidArgumentException(
+                "Incompatible vehicle type '{$vehicleType}' for garage '{$garage->code}' ({$garage->type})."
+            );
+        }
+
+        if ($pricingService->requiresBatteryCapacity($vehicleType) && ($batteryCapacityKwh === null || (float) $batteryCapacityKwh <= 0)) {
+            throw new \InvalidArgumentException(
+                "Battery capacity is required for electric vehicle rental on garage '{$garage->code}'."
+            );
+        }
+
+        $start = $pricingService->resolveStartDate($rentalType, $startDate, $startDate);
+        $durationDays = $pricingService->calculateInitialDurationDays($rentalType, $start, $jumlahHari);
+        $endDate = $pricingService->calculateInitialEndDate($start, $durationDays);
+
+        $baseCost = $rentalType === Rental::TYPE_BULANAN
+            ? $pricingService->calculateMonthlyBaseRate($garage)
+            : $pricingService->multiplyMoney($durationDays, $garage->daily_rate);
+
+        $evChargingFee = $pricingService->calculateEvChargingFee($garage, $vehicleType, $batteryCapacityKwh);
+        $totalCost = $pricingService->addMoney($baseCost, $evChargingFee);
+
+        return [
+            'start_date' => $start,
+            'end_date' => $endDate,
+            'duration_days' => $durationDays,
+            'base_cost' => $baseCost,
+            'ev_charging_fee' => $evChargingFee,
+            'total_cost' => $totalCost,
+        ];
     }
 
     /**
